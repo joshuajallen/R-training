@@ -1,0 +1,52 @@
+library(readr) # Reading csv
+library(dplyr) # Manipulating data 
+library(tidyr) # Create 'tidy' data
+library(stringr) # Working with strings
+library(ggplot2) # Creating charts
+library(readxl) # Reading excel
+library(lubridate) # Working with dates
+library(boeCharts) # Formatting charts in Bank style
+library(foo)
+
+data <- read_excel("GDPOutputData.xlsx", sheet = "Data")
+sectors <- read.csv("\\\\markets/DATA/Data/Offdata/RM/_People/JA/code/R training/Sectors.csv")
+
+data_sectors <- data %>%
+  select(any_of(c("Date", "TOTAL", sectors$Code))) %>% # selecting only columns that correspond to one of the sector codes
+  mutate(DE = D + E) %>% # create a new column that is the sum of columns D & E
+  pivot_longer(-Date, names_to = "Code", values_to = "Level",) %>% # convert into long dataset
+  left_join(sectors, by = "Code", all.x = TRUE) %>% # merge with sector list to get the full names of sectors
+  select(Date, Code, Sector, Level) %>% # reorder columns
+  arrange(Code, Date) %>% # arrange by sector code and date
+  filter(!Code %in% c("A", "D", "E", "T")) %>% # filter out a couple of sectors
+  mutate(Sector = case_when(
+    Code == "TOTAL" ~ "total",
+    Code == "DE" ~ "utilities",
+    TRUE ~ str_to_lower(Sector)
+  )) %>% # Add in a sector name for the total and sum of D & E, and convert all to lower case
+  group_by(Code) %>% # group by code,
+  mutate(
+    Date = as.Date(Date),
+    # make sure our Date column is a Date format
+    QoQ = Level / lag(Level, 1) * 100 - 100,
+    # Create series for quarterly growth
+    YoY = Level / lag(Level, 4) * 100 - 100,
+    # Create series for year-on-year growth
+    PreCovChg = Level / Level[Date == "2019-12-31"] * 100 - 100
+  )
+
+save(data_sectors, file = "data_sectors.RData")
+
+data_sectors %>%
+  filter(Date == "2020-06-30") %>%
+  ggplot(mapping = aes(x = Sector, y = QoQ)) +
+  geom_bar(stat = "identity") + 
+  ggplot2::coord_flip()
+
+library(plotly)
+plot_ly() %>%
+  add_bars(
+    data = data_sectors %>% filter(Date == "2020-06-30"),
+    x = ~Sector,
+    y = ~QoQ
+  ) 
